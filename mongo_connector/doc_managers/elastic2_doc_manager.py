@@ -175,24 +175,24 @@ class CustomDocumentFormatter(object):
 
     def __init__(self, formatter_config):
         self.formatter_config = formatter_config if formatter_config else dict()
-        self.html_formatter = self.formatter_config.get('htmlStrip', {})
+        self.html_formatter = self.formatter_config.get(self.HTML_STRIP, {})
 
-    def _html_formatter(self, index, document):
+    def _html_formatter(self, doc_type, document):
         """ formats html content """
-        if index == self.html_formatter.get('index'):
+        if doc_type == self.html_formatter.get('docType'):
             for field in self.html_formatter.get('fields', []):
                 if field in document:
                     try:
                         document[field] = BeautifulSoup(document.get(field), "lxml").text
                     except Exception as e:
-                        LOG.warning('Failed to format {0} of index: {1}. Error: {2}'.format(field, index, str(e)))
+                        LOG.warning('Failed to format {0} of index: {1}. Error: {2}'.format(field, doc_type, str(e)))
         return document
 
-    def format_document(self, index, document):
+    def format_document(self, doc_type, document):
         """ formats document data """
         for formatter in self.formatter_config.keys():
             if formatter == self.HTML_STRIP:
-                document = self._html_formatter(index, document)
+                document = self._html_formatter(doc_type, document)
             # else:
             #     LOG.warning('Invalid {0} formatter'.format(formatter))
         return document
