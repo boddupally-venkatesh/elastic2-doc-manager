@@ -25,6 +25,8 @@ import warnings
 
 import bson.json_util
 
+from bs4 import BeautifulSoup
+
 try:
     __import__("elasticsearch")
 except ImportError:
@@ -115,7 +117,6 @@ def create_aws_auth(aws_args):
 
 class AutoCommiter(threading.Thread):
     """Thread that periodically sends buffered operations to Elastic.
-
     :Parameters:
       - `docman`: The Elasticsearch DocManager.
       - `send_interval`: Number of seconds to wait before sending buffered
@@ -166,9 +167,39 @@ class AutoCommiter(threading.Thread):
             last_commit += self._sleep_interval
 
 
+class CustomDocumentFormatter(object):
+    """ Custom formatter for that applies data formatting on documents.
+    eg: html formatter: removes html tags from content """
+
+    HTML_STRIP = 'htmlStrip'
+
+    def __init__(self, formatter_config):
+        self.formatter_config = formatter_config if formatter_config else dict()
+        self.html_formatter = self.formatter_config.get('htmlStrip', {})
+
+    def _html_formatter(self, index, document):
+        """ formats html content """
+        if index == self.html_formatter.get('index'):
+            for field in self.html_formatter.get('fields', []):
+                if field in document:
+                    try:
+                        document[field] = BeautifulSoup(document.get(field), "lxml").text
+                    except Exception as e:
+                        LOG.warning('Failed to format {0} of index: {1}. Error: {2}'.format(field, index, str(e)))
+        return document
+
+    def format_document(self, index, document):
+        """ formats document data """
+        for formatter in self.formatter_config.keys():
+            if formatter == self.HTML_STRIP:
+                document = self._html_formatter(index, document)
+            # else:
+            #     LOG.warning('Invalid {0} formatter'.format(formatter))
+        return document
+
+
 class DocManager(DocManagerBase):
     """Elasticsearch implementation of the DocManager interface.
-
     Receives documents from an OplogThread and takes the appropriate actions on
     Elasticsearch.
     """
@@ -201,6 +232,7 @@ class DocManager(DocManagerBase):
         self.elastic = Elasticsearch(hosts=url, **client_options)
 
         self._formatter = DefaultDocumentFormatter()
+        self._custom_formatter = CustomDocumentFormatter(kwargs.get('formatter'))
         self.BulkBuffer = BulkBuffer(self)
 
         # As bulk operation can be done in another thread
@@ -331,7 +363,7 @@ class DocManager(DocManagerBase):
             "_index": index,
             "_type": doc_type,
             "_id": doc_id,
-            "_source": self._formatter.format_document(doc),
+            "_source": self._custom_formatter.format_document(index, self._formatter.format_document(doc)),
         }
         # Index document metadata with original namespace (mixed upper/lower).
         meta_action = {
@@ -361,7 +393,7 @@ class DocManager(DocManagerBase):
                     "_index": index,
                     "_type": doc_type,
                     "_id": doc_id,
-                    "_source": self._formatter.format_document(doc),
+                    "_source": self._custom_formatter.format_document(index, self._formatter.format_document(doc)),
                 }
                 document_meta = {
                     "_index": self.meta_index_name,
@@ -413,7 +445,7 @@ class DocManager(DocManagerBase):
 
         metadata = {"ns": namespace, "_ts": timestamp}
 
-        doc = self._formatter.format_document(doc)
+        doc = self._custom_formatter.format_document(index, self._formatter.format_document(doc))
         doc[self.attachment_field] = base64.b64encode(f.read()).decode()
 
         action = {
@@ -465,7 +497,6 @@ class DocManager(DocManagerBase):
 
     def search(self, start_ts, end_ts):
         """Query Elasticsearch for documents in a time range.
-
         This method is used to find documents that may be in conflict during
         a rollback event in MongoDB.
         """
@@ -487,7 +518,6 @@ class DocManager(DocManagerBase):
 
     def send_buffered_operations(self):
         """Send buffered operations to Elasticsearch.
-
         This method is periodically called by the AutoCommitThread.
         """
         with self.lock:
@@ -512,7 +542,6 @@ class DocManager(DocManagerBase):
     @wrap_exceptions
     def get_last_doc(self):
         """Get the most recently modified document from Elasticsearch.
-
         This method is used to help define a time window within which documents
         may be in conflict after a MongoDB rollback.
         """
