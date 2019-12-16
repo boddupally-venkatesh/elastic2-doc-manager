@@ -363,7 +363,7 @@ class DocManager(DocManagerBase):
             "_index": index,
             "_type": doc_type,
             "_id": doc_id,
-            "_source": self._custom_formatter.format_document(index, self._formatter.format_document(doc)),
+            "_source": self._custom_formatter.format_document(doc_type, self._formatter.format_document(doc)),
         }
         # Index document metadata with original namespace (mixed upper/lower).
         meta_action = {
@@ -393,7 +393,7 @@ class DocManager(DocManagerBase):
                     "_index": index,
                     "_type": doc_type,
                     "_id": doc_id,
-                    "_source": self._custom_formatter.format_document(index, self._formatter.format_document(doc)),
+                    "_source": self._custom_formatter.format_document(doc_type, self._formatter.format_document(doc)),
                 }
                 document_meta = {
                     "_index": self.meta_index_name,
@@ -445,7 +445,7 @@ class DocManager(DocManagerBase):
 
         metadata = {"ns": namespace, "_ts": timestamp}
 
-        doc = self._custom_formatter.format_document(index, self._formatter.format_document(doc))
+        doc = self._custom_formatter.format_document(doc_type, self._formatter.format_document(doc))
         doc[self.attachment_field] = base64.b64encode(f.read()).decode()
 
         action = {
